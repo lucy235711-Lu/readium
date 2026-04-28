@@ -4,9 +4,15 @@ import Anthropic from '@anthropic-ai/sdk';
 class BaseAgent {
   constructor(config = {}) {
     this.style = config.style || 'general';
-    this.provider = config.provider || 'openai';
-    this.model = config.model || 'gpt-4o';
-    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    this.provider = config.provider || 'deepseek';
+    this.model = config.model || 'deepseek-chat';
+
+    // DeepSeek uses OpenAI-compatible API
+    this.openai = new OpenAI({
+      apiKey: process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY,
+      baseURL: process.env.DEEPSEEK_API_KEY ? 'https://api.deepseek.com' : undefined,
+    });
+
     this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
 
@@ -27,9 +33,9 @@ class BaseAgent {
         temperature,
         max_tokens: maxTokens,
       });
-      return { content: response.choices[0]?.message?.content || '', provider: 'openai', model: this.model };
+      return { content: response.choices[0]?.message?.content || '', provider: 'deepseek', model: this.model };
     } catch (error) {
-      throw new Error(`OpenAI failed: ${error.message}`);
+      throw new Error(`DeepSeek failed: ${error.message}`);
     }
   }
 
@@ -85,7 +91,6 @@ class BaseAgent {
       ...conversation,
     ];
 
-    // Override: chat responses are plain text, no JSON, no recommendations
     const originalSystemPrompt = this.getSystemPrompt.bind(this);
     this.getSystemPrompt = () => {
       return originalSystemPrompt()
@@ -94,18 +99,10 @@ class BaseAgent {
     };
 
     const result = await this.generate(messages, options);
-
-    // Restore original
     this.getSystemPrompt = originalSystemPrompt;
-
     return result;
   }
 
-  /**
-   * Extract 2-3 core concepts from this reflection session.
-   * Lightweight call, uses gpt-4o-mini to save cost.
-   * Returns array of { concept, context }
-   */
   async extractConcepts({ sourceText, userNote, reflectionText }) {
     const prompt = `以下是一次阅读批注和 AI reflection，请从中提取 2-3 个最核心的概念词或思想主题。
 
@@ -127,7 +124,7 @@ ${reflectionText}
 
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'deepseek-chat',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.3,
         max_tokens: 300,
