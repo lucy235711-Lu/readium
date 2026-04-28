@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Upload, Trash2, Loader2, FileText } from 'lucide-react';
 import useBookStore from '../stores/useBookStore';
-import NautilusAsset from '../assets/nautilus.svg';
+import NautilusAsset from '../assets/Nautilus.svg';
 import ScallopAsset from '../assets/scallop.svg';
 
 function InkDiffuse({ x, y, dark, onDone }) {
