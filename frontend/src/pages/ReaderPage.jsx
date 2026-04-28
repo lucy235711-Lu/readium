@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, LogOut } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import useBookStore from '../stores/useBookStore';
 import PDFViewer from '../components/PDFViewer/PDFViewer';
 import NotePanel from '../components/NotePanel/NotePanel';
@@ -20,7 +21,6 @@ export default function ReaderPage() {
   } = useBookStore();
 
   const [fileUrl, setFileUrl] = useState(null);
-  const [noFile, setNoFile] = useState(false);
   const [popover, setPopover] = useState(null);
   const [scrollToHighlight, setScrollToHighlight] = useState(null);
   const [generatingForHighlightId, setGeneratingForHighlightId] = useState(null);
@@ -28,32 +28,25 @@ export default function ReaderPage() {
     () => localStorage.getItem('agentStyle') || 'philosophy'
   );
 
-  useEffect(() => {
-    fetchBook(bookId);
-  }, [bookId, fetchBook]);
+  useEffect(() => { fetchBook(bookId); }, [bookId]);
 
   useEffect(() => {
     if (!currentBook) return;
-    const url = getFileUrl(bookId);
-    if (url) {
-      fileUrlRef.current = url;
-      setFileUrl(url);
-      setNoFile(false);
-    } else {
-      setNoFile(true);
-    }
-    return () => {
-      if (fileUrlRef.current) {
-        URL.revokeObjectURL(fileUrlRef.current);
-        fileUrlRef.current = null;
+    getFileUrl(bookId).then(url => {
+      if (url) {
+        if (fileUrlRef.current && fileUrlRef.current.startsWith('blob:')) {
+          URL.revokeObjectURL(fileUrlRef.current);
+        }
+        fileUrlRef.current = url;
+        setFileUrl(url);
       }
-    };
-  }, [currentBook, bookId, getFileUrl]);
+    });
+  }, [currentBook, bookId]);
 
   useEffect(() => {
     const timer = setTimeout(() => updateProgress(), 1000);
     return () => clearTimeout(timer);
-  }, [currentPage, zoom, updateProgress]);
+  }, [currentPage, zoom]);
 
   useEffect(() => {
     localStorage.setItem('agentStyle', agentStyle);
@@ -75,7 +68,7 @@ export default function ReaderPage() {
     let highlight = null;
     try {
       const position = JSON.stringify({ rects: popover.rects });
-      highlight = createHighlight(bookId, currentPage, popover.text, position, color);
+      highlight = await createHighlight(bookId, currentPage, popover.text, position, color);
     } catch (err) {
       console.error('Failed to save highlight:', err);
       return;
@@ -98,7 +91,7 @@ export default function ReaderPage() {
         bookTitle: currentBook.title,
       });
 
-      createReflection({
+      await createReflection({
         highlightId: highlight.id,
         bookId,
         agentStyle,
@@ -108,7 +101,7 @@ export default function ReaderPage() {
       });
     } catch (err) {
       console.error('Reflection failed:', err);
-      createReflection({
+      await createReflection({
         highlightId: highlight.id,
         bookId,
         agentStyle,
@@ -121,10 +114,10 @@ export default function ReaderPage() {
     }
   }, [popover, currentBook, currentPage, bookId, createHighlight, createReflection, agentStyle]);
 
-  const handleHighlightOnly = useCallback((color) => {
+  const handleHighlightOnly = useCallback(async (color) => {
     if (!popover?.text || !popover?.rects) return;
     const position = JSON.stringify({ rects: popover.rects });
-    createHighlight(bookId, currentPage, popover.text, position, color);
+    await createHighlight(bookId, currentPage, popover.text, position, color);
     setPopover(null);
   }, [popover, bookId, currentPage, createHighlight]);
 
@@ -139,56 +132,16 @@ export default function ReaderPage() {
     }
   }, [setCurrentPage]);
 
-  const handleConversationUpdate = useCallback((reflectionId, conversation) => {
-    updateConversation(reflectionId, conversation);
+  const handleConversationUpdate = useCallback(async (reflectionId, conversation) => {
+    await updateConversation(reflectionId, conversation);
   }, [updateConversation]);
 
-  // Loading state
   if (loading || !currentBook) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-slate-300 border-t-slate-800 rounded-full animate-spin mx-auto mb-4" />
           <p className="text-slate-500">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // No file selected — ask user to pick the file
-  if (noFile) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="text-center max-w-sm px-4">
-          <p className="text-slate-700 font-medium mb-2">{currentBook.title}</p>
-          <p className="text-slate-500 text-sm mb-6">
-            PDF files aren't stored on the server. Please select the file from your device to continue reading.
-          </p>
-          <label style={{ cursor: 'pointer' }}>
-            <div style={{
-              padding: '12px 24px', background: '#63452f', color: '#fff',
-              borderRadius: '12px', fontSize: '14px', fontWeight: 500,
-              display: 'inline-flex', alignItems: 'center', gap: '8px',
-            }}>
-              Select PDF file
-            </div>
-            <input type="file" accept=".pdf" style={{ display: 'none' }}
-              onChange={(e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                useBookStore.getState().storeFile(bookId, file);
-                const url = URL.createObjectURL(file);
-                fileUrlRef.current = url;
-                setFileUrl(url);
-                setNoFile(false);
-              }}
-            />
-          </label>
-          <br /><br />
-          <button onClick={() => navigate('/')}
-            style={{ background: 'none', border: 'none', color: '#8a8278', cursor: 'pointer', fontSize: '13px' }}>
-            ← Back to library
-          </button>
         </div>
       </div>
     );
@@ -201,25 +154,34 @@ export default function ReaderPage() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="font-medium truncate text-slate-800">{currentBook.title}</h1>
-        <div className="ml-auto text-xs text-slate-400">
-          Right-click selected text to reflect
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-slate-400">Right-click selected text to reflect</span>
+          <button onClick={() => supabase.auth.signOut()} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600">
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative overflow-hidden">
-          <PDFViewer
-            fileUrl={fileUrl}
-            initialPage={currentPage}
-            initialZoom={zoom}
-            onPageChange={setCurrentPage}
-            onZoomChange={setZoom}
-            onTextSelect={handleTextSelect}
-            highlights={highlights}
-            onHighlightClick={handleJumpToSource}
-            scrollToHighlight={scrollToHighlight}
-            onDocumentLoadSuccess={(numPages) => setTotalPages(numPages)}
-          />
+          {fileUrl ? (
+            <PDFViewer
+              fileUrl={fileUrl}
+              initialPage={currentPage}
+              initialZoom={zoom}
+              onPageChange={setCurrentPage}
+              onZoomChange={setZoom}
+              onTextSelect={handleTextSelect}
+              highlights={highlights}
+              onHighlightClick={handleJumpToSource}
+              scrollToHighlight={scrollToHighlight}
+              onDocumentLoadSuccess={(numPages) => setTotalPages(numPages)}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center">
+              <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+            </div>
+          )}
         </div>
 
         <NotePanel

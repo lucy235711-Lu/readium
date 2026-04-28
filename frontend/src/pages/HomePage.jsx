@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Upload, Trash2, Loader2, FileText } from 'lucide-react';
+import { BookOpen, Upload, Trash2, Loader2, FileText, LogOut } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import useBookStore from '../stores/useBookStore';
 import NautilusAsset from '../assets/Nautilus.svg';
 import ScallopAsset from '../assets/scallop.svg';
@@ -192,29 +193,13 @@ function SparkleLayer() {
   return <canvas ref={canvasRef} style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1 }} />;
 }
 
-function NautilusSVG({ size, rotation }) {
-  return (
-    <img src={NautilusAsset} width={size * 15} height={size * 15}
-      style={{ transform: `rotate(${rotation}deg)`, display: 'block', pointerEvents: 'none' }} alt="" />
-  );
-}
-
-function ScallopSVG({ size, rotation }) {
-  return (
-    <img src={ScallopAsset} width={size * 8} height={size * 8}
-      style={{ transform: `rotate(${rotation}deg)`, display: 'block', pointerEvents: 'none' }} alt="" />
-  );
-}
-
 function ShellBubble({ containX, containY, radius, type, onClick }) {
   const SIZE = 72;
   const posRef = useRef({
     x: containX + (Math.random() - 0.5) * radius * 0.4,
     y: containY + (Math.random() - 0.5) * radius * 0.4,
-    vx: (Math.random() - 0.5) * 0.65,
-    vy: (Math.random() - 0.5) * 0.65,
-    rotation: Math.random() * 360,
-    angularVel: (Math.random() - 0.5) * 0.25,
+    vx: (Math.random() - 0.5) * 0.65, vy: (Math.random() - 0.5) * 0.65,
+    rotation: Math.random() * 360, angularVel: (Math.random() - 0.5) * 0.25,
   });
   const [pos, setPos] = useState({ x: posRef.current.x, y: posRef.current.y, rotation: posRef.current.rotation });
   const [hovered, setHovered] = useState(false);
@@ -231,20 +216,17 @@ function ShellBubble({ containX, containY, radius, type, onClick }) {
         const nx = dx / dist, ny = dy / dist;
         const dot = p.vx * nx + p.vy * ny;
         p.vx -= 2 * dot * nx; p.vy -= 2 * dot * ny;
-        p.x -= nx * (dist + HIT_R - radius);
-        p.y -= ny * (dist + HIT_R - radius);
+        p.x -= nx * (dist + HIT_R - radius); p.y -= ny * (dist + HIT_R - radius);
         const tangential = p.vx * (-ny) + p.vy * nx;
         p.angularVel += tangential * 0.18;
         const spd = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
         if (spd > 0.9) { p.vx = (p.vx / spd) * 0.9; p.vy = (p.vy / spd) * 0.9; }
       }
-      p.vx += (Math.random() - 0.5) * 0.022;
-      p.vy += (Math.random() - 0.5) * 0.022;
+      p.vx += (Math.random() - 0.5) * 0.022; p.vy += (Math.random() - 0.5) * 0.022;
       const spd = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
       if (spd > 0.85) { p.vx = (p.vx / spd) * 0.85; p.vy = (p.vy / spd) * 0.85; }
       if (spd < 0.18) { p.vx *= 1.06; p.vy *= 1.06; }
-      p.angularVel *= 0.975;
-      p.rotation += p.angularVel;
+      p.angularVel *= 0.975; p.rotation += p.angularVel;
       setPos({ x: p.x, y: p.y, rotation: p.rotation });
       animRef.current = requestAnimationFrame(tick);
     };
@@ -255,8 +237,7 @@ function ShellBubble({ containX, containY, radius, type, onClick }) {
   const DISPLAY = SIZE * 2;
   return (
     <div onClick={() => onClick(pos.x, pos.y)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       style={{
         position: 'fixed', left: pos.x - DISPLAY / 2, top: pos.y - DISPLAY / 2,
         width: DISPLAY, height: DISPLAY, cursor: 'pointer', zIndex: 50,
@@ -265,59 +246,50 @@ function ShellBubble({ containX, containY, radius, type, onClick }) {
         filter: hovered ? 'drop-shadow(0 8px 18px rgba(100,60,20,0.4))' : 'drop-shadow(0 4px 10px rgba(100,60,20,0.22))',
         overflow: 'visible',
       }}>
-      {type === 'nautilus' ? <NautilusSVG size={SIZE} rotation={pos.rotation} /> : <ScallopSVG size={SIZE} rotation={pos.rotation} />}
+      {type === 'nautilus'
+        ? <img src={NautilusAsset} width={SIZE * 15} height={SIZE * 15} style={{ transform: `rotate(${pos.rotation}deg)`, display: 'block', pointerEvents: 'none' }} alt="" />
+        : <img src={ScallopAsset} width={SIZE * 8} height={SIZE * 8} style={{ transform: `rotate(${pos.rotation}deg)`, display: 'block', pointerEvents: 'none' }} alt="" />
+      }
     </div>
   );
 }
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { books, fetchBooks, addBook, deleteBook, storeFile } = useBookStore();
+  const { books, fetchBooks, addBook, deleteBook } = useBookStore();
   const [uploading, setUploading] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
   const [windowSize, setWindowSize] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [inkEffect, setInkEffect] = useState(null);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     fetchBooks();
+    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
     const h = () => setWindowSize({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', h);
     return () => window.removeEventListener('resize', h);
-  }, [fetchBooks]);
+  }, []);
 
   const handleOpen = async (e) => {
     e.preventDefault();
     if (!uploadFile || !uploadTitle.trim()) return;
     setUploading(true);
     try {
-      const book = addBook(uploadFile, uploadTitle.trim());
+      const book = await addBook(uploadFile, uploadTitle.trim());
       navigate(`/reader/${book.id}`);
     } catch (err) {
       console.error(err);
+      alert('上传失败：' + err.message);
     } finally {
       setUploading(false);
     }
   };
 
-  // When clicking an existing book, user must re-select the file
-  // because File objects can't be persisted across sessions
-  const handleBookClick = (book) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.pdf';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      storeFile(book.id, file);
-      navigate(`/reader/${book.id}`);
-    };
-    input.click();
-  };
-
-  const handleDelete = (e, id) => {
+  const handleDelete = async (e, id) => {
     e.stopPropagation();
-    if (confirm('Delete this book and all its notes?')) deleteBook(id);
+    if (confirm('Delete this book and all its notes?')) await deleteBook(id);
   };
 
   const W = windowSize.w, H = windowSize.h;
@@ -344,29 +316,40 @@ export default function HomePage() {
       <div className="min-h-screen">
         <main className="max-w-4xl mx-auto px-4 py-8">
 
-          {/* Title capsule */}
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: '18px',
-            background: 'rgba(250,248,244,0.68)',
-            backdropFilter: 'blur(24px) saturate(160%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(160%)',
-            borderRadius: '22px',
-            border: '0.5px solid rgba(255,255,255,0.78)',
-            boxShadow: '0 8px 28px rgba(0,0,0,0.09),inset 0 1px 0 rgba(255,255,255,0.92)',
-            padding: '30px 48px', marginBottom: '32px',
-          }}>
-            <BookOpen size={36} color="#5a3e28" />
-            <div>
-              <h1 style={{ margin: 0, fontSize: '30px', fontWeight: 700, color: '#1a1410', lineHeight: 1.2 }}>Readium</h1>
-              <p style={{ margin: '5px 0 0', fontSize: '14px', color: '#7a6e62', lineHeight: 1.3 }}>Mind in Charge, Tech on Call</p>
+          {/* Title + user */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '18px',
+              background: 'rgba(250,248,244,0.68)',
+              backdropFilter: 'blur(24px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+              borderRadius: '22px',
+              border: '0.5px solid rgba(255,255,255,0.78)',
+              boxShadow: '0 8px 28px rgba(0,0,0,0.09),inset 0 1px 0 rgba(255,255,255,0.92)',
+              padding: '30px 48px',
+            }}>
+              <BookOpen size={36} color="#5a3e28" />
+              <div>
+                <h1 style={{ margin: 0, fontSize: '30px', fontWeight: 700, color: '#1a1410', lineHeight: 1.2 }}>Readium</h1>
+                <p style={{ margin: '5px 0 0', fontSize: '14px', color: '#7a6e62', lineHeight: 1.3 }}>Mind in Charge, Tech on Call</p>
+              </div>
             </div>
+            {user && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 10 }}>
+                <span style={{ fontSize: '13px', color: '#7a6e62' }}>{user.email}</span>
+                <button onClick={() => supabase.auth.signOut()}
+                  style={{ background: 'rgba(250,248,244,0.7)', border: '0.5px solid rgba(200,194,184,0.65)', borderRadius: '10px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                  <LogOut size={15} color="#7a6e62" />
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Open PDF card */}
+          {/* Upload card */}
           <section style={{ marginBottom: '24px' }}>
             <div style={{ ...card, padding: '28px' }}>
               <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#1c1916', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Upload size={15} color="#5a3e28" /> Open PDF
+                <Upload size={15} color="#5a3e28" /> Upload PDF
               </h2>
               <form onSubmit={handleOpen} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <input type="text" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)}
@@ -381,11 +364,14 @@ export default function HomePage() {
                         </div>
                       : <div style={{ color: '#8a8278' }}>
                           <p style={{ margin: 0, fontSize: '14px' }}>Click to select PDF file</p>
-                          <p style={{ margin: '4px 0 0', fontSize: '12px' }}>File stays on your device — nothing is uploaded</p>
+                          <p style={{ margin: '4px 0 0', fontSize: '12px' }}>Saved to your account permanently</p>
                         </div>
                     }
                   </div>
-                  <input type="file" accept=".pdf" onChange={e => { setUploadFile(e.target.files[0]); if (!uploadTitle && e.target.files[0]) setUploadTitle(e.target.files[0].name.replace(/\.pdf$/i, '')); }} style={{ display: 'none' }} required />
+                  <input type="file" accept=".pdf" onChange={e => {
+                    setUploadFile(e.target.files[0]);
+                    if (!uploadTitle && e.target.files[0]) setUploadTitle(e.target.files[0].name.replace(/\.pdf$/i, ''));
+                  }} style={{ display: 'none' }} required />
                 </label>
                 <button type="submit" disabled={disabled}
                   style={{
@@ -398,7 +384,7 @@ export default function HomePage() {
                     transition: 'background 0.2s',
                   }}>
                   {uploading ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={15} />}
-                  {uploading ? 'Opening...' : 'Open & Read'}
+                  {uploading ? 'Uploading...' : 'Upload & Read'}
                 </button>
               </form>
             </div>
@@ -407,37 +393,35 @@ export default function HomePage() {
           {/* Books list */}
           <section>
             <div style={{ ...card, padding: '28px' }}>
-              <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#1c1916', margin: '0 0 4px' }}>Your Books</h2>
-              <p style={{ fontSize: '12px', color: '#8a8278', margin: '0 0 16px' }}>Click a book to re-open it — you'll need to select the file again</p>
+              <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#1c1916', margin: '0 0 16px' }}>Your Books</h2>
               {books.length === 0 && (
                 <p style={{ textAlign: 'center', color: '#8a8278', fontSize: '14px', padding: '16px 0', margin: 0 }}>
-                  No books yet. Open a PDF to get started.
+                  No books yet. Upload a PDF to get started.
                 </p>
               )}
               {books.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {books.map(book => (
-                    <div key={book.id} onClick={() => handleBookClick(book)}
+                    <div key={book.id} onClick={() => navigate(`/reader/${book.id}`)}
                       style={{ background: 'rgba(255,255,255,0.42)', border: '0.5px solid rgba(255,255,255,0.72)', borderRadius: '14px', padding: '14px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 8px rgba(0,0,0,0.05),inset 0 1px 0 rgba(255,255,255,0.8)', transition: 'background 0.15s,box-shadow 0.15s,transform 0.15s' }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.68)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.08),inset 0 1px 0 rgba(255,255,255,0.9)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.42)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05),inset 0 1px 0 rgba(255,255,255,0.8)'; }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.68)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.42)'; e.currentTarget.style.transform = 'translateY(0)'; }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <div style={{ width: '38px', height: '48px', background: 'rgba(205,200,192,0.45)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.07)' }}>
+                        <div style={{ width: '38px', height: '48px', background: 'rgba(205,200,192,0.45)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <FileText size={16} color="#8a8278" />
                         </div>
                         <div>
                           <p style={{ margin: 0, fontSize: '14px', fontWeight: 500, color: '#1c1916' }}>{book.title}</p>
                           <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#8a8278' }}>
                             {book.current_page > 1 ? `Last read: page ${book.current_page}` : 'Not started'}
-                            {book.fileName && ` · ${book.fileName}`}
                           </p>
                         </div>
                       </div>
                       <button onClick={e => handleDelete(e, book.id)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#b5afa5', borderRadius: '8px', transition: 'color 0.15s,background 0.15s' }}
-                        onMouseEnter={e => { e.currentTarget.style.color = '#b84040'; e.currentTarget.style.background = 'rgba(184,64,64,0.07)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = '#b5afa5'; e.currentTarget.style.background = 'none'; }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#b5afa5', borderRadius: '8px', transition: 'color 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#b84040'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = '#b5afa5'; }}
                       ><Trash2 size={15} /></button>
                     </div>
                   ))}

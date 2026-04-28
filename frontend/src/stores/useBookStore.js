@@ -1,26 +1,13 @@
 import { create } from 'zustand';
-
-// Helper: load from localStorage
-const load = (key, fallback) => {
-  try {
-    const v = localStorage.getItem(key);
-    return v ? JSON.parse(v) : fallback;
-  } catch { return fallback; }
-};
-
-// Helper: save to localStorage
-const save = (key, value) => {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-};
-
-// Generate unique id
-const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+import { supabase } from '../lib/supabase';
 
 // In-memory file store (File objects can't be serialized)
 const fileStore = {};
 
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 const useBookStore = create((set, get) => ({
-  books: load('readium_books', []),
+  books: [],
   currentBook: null,
   highlights: [],
   reflections: [],
@@ -30,103 +17,113 @@ const useBookStore = create((set, get) => ({
   zoom: 1.0,
 
   // ── Books ──────────────────────────────────────────────
-  fetchBooks: () => {
-    const books = load('readium_books', []);
-    set({ books });
+  fetchBooks: async () => {
+    set({ loading: true });
+    const { data, error } = await supabase
+      .from('books')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (!error) set({ books: data || [], loading: false });
+    else set({ loading: false });
   },
 
-  // Called when user picks a file
-  addBook: (file, title) => {
+  addBook: async (file, title) => {
+    const { data: { user } } = await supabase.auth.getUser();
     const id = uid();
     fileStore[id] = file;
+
+    // Upload PDF to Supabase Storage
+    const filePath = `${user.id}/${id}/${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from('pdfs')
+      .upload(filePath, file);
+
+    if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
+
     const book = {
       id,
+      user_id: user.id,
       title: title || file.name.replace(/\.pdf$/i, ''),
-      fileName: file.name,
-      fileSize: file.size,
+      file_name: file.name,
+      file_path: filePath,
       current_page: 1,
       total_pages: null,
       zoom: 1.0,
-      createdAt: Date.now(),
     };
-    const books = [book, ...load('readium_books', [])];
-    save('readium_books', books);
-    set({ books });
-    return book;
+
+    const { data, error } = await supabase.from('books').insert(book).select().single();
+    if (error) throw error;
+
+    set(state => ({ books: [data, ...state.books] }));
+    return data;
   },
 
-  deleteBook: (id) => {
+  deleteBook: async (id) => {
+    const book = get().books.find(b => b.id === id);
+    if (book?.file_path) {
+      await supabase.storage.from('pdfs').remove([book.file_path]);
+    }
     delete fileStore[id];
-    // also remove highlights/reflections for this book
-    const allH = load('readium_highlights', []);
-    const allR = load('readium_reflections', []);
-    save('readium_highlights', allH.filter(h => h.book_id !== id));
-    save('readium_reflections', allR.filter(r => r.book_id !== id));
-
-    const books = load('readium_books', []).filter(b => b.id !== id);
-    save('readium_books', books);
+    await supabase.from('books').delete().eq('id', id);
     set(state => ({
-      books,
+      books: state.books.filter(b => b.id !== id),
       currentBook: state.currentBook?.id === id ? null : state.currentBook,
     }));
   },
 
   // ── Open a book ────────────────────────────────────────
-  fetchBook: (id) => {
+  fetchBook: async (id) => {
     set({ loading: true, currentBook: null, highlights: [], reflections: [], currentPage: 1, zoom: 1.0 });
-    const books = load('readium_books', []);
-    const book = books.find(b => b.id === id);
-    if (!book) {
-      set({ loading: false, error: 'Book not found' });
-      return;
-    }
-    const highlights = load('readium_highlights', []).filter(h => h.book_id === id);
-    const reflections = load('readium_reflections', []).filter(r => r.book_id === id);
+
+    const { data: book, error } = await supabase.from('books').select('*').eq('id', id).single();
+    if (error || !book) { set({ loading: false }); return; }
+
+    const [{ data: highlights }, { data: reflections }] = await Promise.all([
+      supabase.from('highlights').select('*').eq('book_id', id).order('created_at'),
+      supabase.from('reflections').select('*').eq('book_id', id).order('created_at'),
+    ]);
+
     set({
       currentBook: book,
       currentPage: book.current_page || 1,
       zoom: book.zoom || 1.0,
-      highlights,
-      reflections,
+      highlights: highlights || [],
+      reflections: reflections || [],
       loading: false,
     });
   },
 
-  // Get object URL for PDF (from in-memory fileStore)
-  getFileUrl: (id) => {
-    const file = fileStore[id];
-    if (!file) return null;
-    return URL.createObjectURL(file);
+  // Get file URL — from Supabase Storage
+  getFileUrl: async (id) => {
+    if (fileStore[id]) return URL.createObjectURL(fileStore[id]);
+    const book = get().books.find(b => b.id === id) || get().currentBook;
+    if (!book?.file_path) return null;
+    const { data } = await supabase.storage.from('pdfs').createSignedUrl(book.file_path, 3600);
+    return data?.signedUrl || null;
   },
 
-  // Store file object (called when navigating to reader)
-  storeFile: (id, file) => {
-    fileStore[id] = file;
-  },
+  storeFile: (id, file) => { fileStore[id] = file; },
 
   // ── Highlights ────────────────────────────────────────
-  createHighlight: (bookId, pageNumber, content, position, color) => {
+  createHighlight: async (bookId, pageNumber, content, position, color) => {
+    const { data: { user } } = await supabase.auth.getUser();
     const highlight = {
       id: uid(),
+      user_id: user.id,
       book_id: bookId,
       page_number: pageNumber,
       content,
       position,
       color: color || 'yellow',
-      createdAt: Date.now(),
     };
-    const all = load('readium_highlights', []);
-    all.push(highlight);
-    save('readium_highlights', all);
-    set(state => ({ highlights: [...state.highlights, highlight] }));
-    return highlight;
+    const { data, error } = await supabase.from('highlights').insert(highlight).select().single();
+    if (error) throw error;
+    set(state => ({ highlights: [...state.highlights, data] }));
+    return data;
   },
 
-  deleteHighlight: (id) => {
-    const all = load('readium_highlights', []).filter(h => h.id !== id);
-    save('readium_highlights', all);
-    const allR = load('readium_reflections', []).filter(r => r.highlight_id !== id);
-    save('readium_reflections', allR);
+  deleteHighlight: async (id) => {
+    await supabase.from('highlights').delete().eq('id', id);
     set(state => ({
       highlights: state.highlights.filter(h => h.id !== id),
       reflections: state.reflections.filter(r => r.highlight_id !== id),
@@ -134,9 +131,11 @@ const useBookStore = create((set, get) => ({
   },
 
   // ── Reflections ───────────────────────────────────────
-  createReflection: ({ highlightId, bookId, agentStyle, userNote, reflection, recommendations }) => {
+  createReflection: async ({ highlightId, bookId, agentStyle, userNote, reflection, recommendations }) => {
+    const { data: { user } } = await supabase.auth.getUser();
     const obj = {
       id: uid(),
+      user_id: user.id,
       highlight_id: highlightId,
       book_id: bookId,
       agent_style: agentStyle,
@@ -144,50 +143,46 @@ const useBookStore = create((set, get) => ({
       reflection,
       recommendations: recommendations || [],
       conversation: [],
-      createdAt: Date.now(),
     };
-    const all = load('readium_reflections', []);
-    all.push(obj);
-    save('readium_reflections', all);
-    set(state => ({ reflections: [...state.reflections, obj] }));
-    return obj;
+    const { data, error } = await supabase.from('reflections').insert(obj).select().single();
+    if (error) throw error;
+    set(state => ({ reflections: [...state.reflections, data] }));
+    return data;
   },
 
-  updateConversation: (reflectionId, conversation) => {
-    const all = load('readium_reflections', []).map(r =>
-      r.id === reflectionId ? { ...r, conversation } : r
-    );
-    save('readium_reflections', all);
-    set(state => ({
-      reflections: state.reflections.map(r =>
-        r.id === reflectionId ? { ...r, conversation } : r
-      ),
-    }));
+  updateConversation: async (reflectionId, conversation) => {
+    const { data, error } = await supabase
+      .from('reflections')
+      .update({ conversation })
+      .eq('id', reflectionId)
+      .select()
+      .single();
+    if (!error) {
+      set(state => ({
+        reflections: state.reflections.map(r => r.id === reflectionId ? data : r),
+      }));
+    }
   },
 
   // ── Page / Zoom ───────────────────────────────────────
   setCurrentPage: (page) => set({ currentPage: page }),
   setZoom: (zoom) => set({ zoom }),
 
-  updateProgress: () => {
+  updateProgress: async () => {
     const { currentBook, currentPage, zoom } = get();
     if (!currentBook) return;
-    const books = load('readium_books', []).map(b =>
-      b.id === currentBook.id ? { ...b, current_page: currentPage, zoom } : b
-    );
-    save('readium_books', books);
-    set({ books });
+    await supabase.from('books').update({ current_page: currentPage, zoom }).eq('id', currentBook.id);
+    set(state => ({
+      books: state.books.map(b => b.id === currentBook.id ? { ...b, current_page: currentPage, zoom } : b),
+    }));
   },
 
-  setTotalPages: (total) => {
+  setTotalPages: async (total) => {
     const { currentBook } = get();
     if (!currentBook) return;
-    const books = load('readium_books', []).map(b =>
-      b.id === currentBook.id ? { ...b, total_pages: total } : b
-    );
-    save('readium_books', books);
+    await supabase.from('books').update({ total_pages: total }).eq('id', currentBook.id);
     set(state => ({
-      books,
+      books: state.books.map(b => b.id === currentBook.id ? { ...b, total_pages: total } : b),
       currentBook: { ...state.currentBook, total_pages: total },
     }));
   },
