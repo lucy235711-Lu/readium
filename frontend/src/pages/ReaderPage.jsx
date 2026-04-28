@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import useBookStore from '../stores/useBookStore';
@@ -10,23 +10,45 @@ import { generateReflection } from '../services/api';
 export default function ReaderPage() {
   const { bookId } = useParams();
   const navigate = useNavigate();
+  const fileUrlRef = useRef(null);
 
   const {
     currentBook, highlights, reflections, loading,
     currentPage, zoom,
-    fetchBook, createHighlight, createReflection, updateConversation,
-    setCurrentPage, setZoom, updateProgress
+    fetchBook, getFileUrl, createHighlight, createReflection, updateConversation,
+    setCurrentPage, setZoom, updateProgress, setTotalPages,
   } = useBookStore();
 
+  const [fileUrl, setFileUrl] = useState(null);
+  const [noFile, setNoFile] = useState(false);
   const [popover, setPopover] = useState(null);
   const [scrollToHighlight, setScrollToHighlight] = useState(null);
   const [generatingForHighlightId, setGeneratingForHighlightId] = useState(null);
-
   const [agentStyle, setAgentStyle] = useState(
     () => localStorage.getItem('agentStyle') || 'philosophy'
   );
 
-  useEffect(() => { fetchBook(bookId); }, [bookId, fetchBook]);
+  useEffect(() => {
+    fetchBook(bookId);
+  }, [bookId, fetchBook]);
+
+  useEffect(() => {
+    if (!currentBook) return;
+    const url = getFileUrl(bookId);
+    if (url) {
+      fileUrlRef.current = url;
+      setFileUrl(url);
+      setNoFile(false);
+    } else {
+      setNoFile(true);
+    }
+    return () => {
+      if (fileUrlRef.current) {
+        URL.revokeObjectURL(fileUrlRef.current);
+        fileUrlRef.current = null;
+      }
+    };
+  }, [currentBook, bookId, getFileUrl]);
 
   useEffect(() => {
     const timer = setTimeout(() => updateProgress(), 1000);
@@ -53,9 +75,7 @@ export default function ReaderPage() {
     let highlight = null;
     try {
       const position = JSON.stringify({ rects: popover.rects });
-      highlight = await createHighlight(
-        currentBook.id, currentPage, popover.text, position, color
-      );
+      highlight = createHighlight(bookId, currentPage, popover.text, position, color);
     } catch (err) {
       console.error('Failed to save highlight:', err);
       return;
@@ -73,26 +93,25 @@ export default function ReaderPage() {
         userNote,
         style: agentStyle,
         provider: 'openai',
-        // Pass these so backend can save concepts
         highlightId: highlight.id,
-        bookId: currentBook.id,
+        bookId,
         bookTitle: currentBook.title,
       });
 
-      await createReflection({
+      createReflection({
         highlightId: highlight.id,
-        bookId: currentBook.id,
-        agentStyle: agentStyle,
+        bookId,
+        agentStyle,
         userNote,
         reflection: response.reflection,
         recommendations: response.recommendations,
       });
     } catch (err) {
       console.error('Reflection failed:', err);
-      await createReflection({
+      createReflection({
         highlightId: highlight.id,
-        bookId: currentBook.id,
-        agentStyle: agentStyle,
+        bookId,
+        agentStyle,
         userNote,
         reflection: '生成失败，请检查 API 连接后重试。',
         recommendations: [],
@@ -100,18 +119,14 @@ export default function ReaderPage() {
     } finally {
       setGeneratingForHighlightId(null);
     }
-  }, [popover, currentBook, currentPage, createHighlight, createReflection, agentStyle]);
+  }, [popover, currentBook, currentPage, bookId, createHighlight, createReflection, agentStyle]);
 
-  const handleHighlightOnly = useCallback(async (color) => {
+  const handleHighlightOnly = useCallback((color) => {
     if (!popover?.text || !popover?.rects) return;
-    try {
-      const position = JSON.stringify({ rects: popover.rects });
-      await createHighlight(currentBook.id, currentPage, popover.text, position, color);
-    } catch (err) {
-      console.error('Failed to save highlight:', err);
-    }
+    const position = JSON.stringify({ rects: popover.rects });
+    createHighlight(bookId, currentPage, popover.text, position, color);
     setPopover(null);
-  }, [popover, currentBook, currentPage, createHighlight]);
+  }, [popover, bookId, currentPage, createHighlight]);
 
   const handleJumpToSource = useCallback((highlight) => {
     try {
@@ -124,10 +139,11 @@ export default function ReaderPage() {
     }
   }, [setCurrentPage]);
 
-  const handleConversationUpdate = useCallback(async (reflectionId, conversation) => {
-    await updateConversation(reflectionId, conversation);
+  const handleConversationUpdate = useCallback((reflectionId, conversation) => {
+    updateConversation(reflectionId, conversation);
   }, [updateConversation]);
 
+  // Loading state
   if (loading || !currentBook) {
     return (
       <div className="h-screen flex items-center justify-center">
@@ -139,7 +155,44 @@ export default function ReaderPage() {
     );
   }
 
-  const fileUrl = `http://localhost:3001/uploads/${currentBook.file_path}`;
+  // No file selected — ask user to pick the file
+  if (noFile) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center max-w-sm px-4">
+          <p className="text-slate-700 font-medium mb-2">{currentBook.title}</p>
+          <p className="text-slate-500 text-sm mb-6">
+            PDF files aren't stored on the server. Please select the file from your device to continue reading.
+          </p>
+          <label style={{ cursor: 'pointer' }}>
+            <div style={{
+              padding: '12px 24px', background: '#63452f', color: '#fff',
+              borderRadius: '12px', fontSize: '14px', fontWeight: 500,
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+            }}>
+              Select PDF file
+            </div>
+            <input type="file" accept=".pdf" style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                useBookStore.getState().storeFile(bookId, file);
+                const url = URL.createObjectURL(file);
+                fileUrlRef.current = url;
+                setFileUrl(url);
+                setNoFile(false);
+              }}
+            />
+          </label>
+          <br /><br />
+          <button onClick={() => navigate('/')}
+            style={{ background: 'none', border: 'none', color: '#8a8278', cursor: 'pointer', fontSize: '13px' }}>
+            ← Back to library
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col">
@@ -165,6 +218,7 @@ export default function ReaderPage() {
             highlights={highlights}
             onHighlightClick={handleJumpToSource}
             scrollToHighlight={scrollToHighlight}
+            onDocumentLoadSuccess={(numPages) => setTotalPages(numPages)}
           />
         </div>
 

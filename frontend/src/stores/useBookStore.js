@@ -1,11 +1,27 @@
 import { create } from 'zustand';
-import * as api from '../services/api';
+
+// Helper: load from localStorage
+const load = (key, fallback) => {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch { return fallback; }
+};
+
+// Helper: save to localStorage
+const save = (key, value) => {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+};
+
+// Generate unique id
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+// In-memory file store (File objects can't be serialized)
+const fileStore = {};
 
 const useBookStore = create((set, get) => ({
-  // State
-  books: [],
+  books: load('readium_books', []),
   currentBook: null,
-  notes: [],
   highlights: [],
   reflections: [],
   loading: false,
@@ -13,180 +29,168 @@ const useBookStore = create((set, get) => ({
   currentPage: 1,
   zoom: 1.0,
 
-  // Actions
-  fetchBooks: async () => {
-    set({ loading: true, error: null });
-    try {
-      const books = await api.getBooks();
-      set({ books, loading: false });
-    } catch (error) {
-      set({ error: 'Failed to fetch books', loading: false });
-    }
+  // ── Books ──────────────────────────────────────────────
+  fetchBooks: () => {
+    const books = load('readium_books', []);
+    set({ books });
   },
 
-  fetchBook: async (id) => {
-    // Clear previous book's data immediately before loading new one
-    set({
-      loading: true,
-      error: null,
-      currentBook: null,
-      highlights: [],
-      reflections: [],
-      currentPage: 1,
+  // Called when user picks a file
+  addBook: (file, title) => {
+    const id = uid();
+    fileStore[id] = file;
+    const book = {
+      id,
+      title: title || file.name.replace(/\.pdf$/i, ''),
+      fileName: file.name,
+      fileSize: file.size,
+      current_page: 1,
+      total_pages: null,
       zoom: 1.0,
+      createdAt: Date.now(),
+    };
+    const books = [book, ...load('readium_books', [])];
+    save('readium_books', books);
+    set({ books });
+    return book;
+  },
+
+  deleteBook: (id) => {
+    delete fileStore[id];
+    // also remove highlights/reflections for this book
+    const allH = load('readium_highlights', []);
+    const allR = load('readium_reflections', []);
+    save('readium_highlights', allH.filter(h => h.book_id !== id));
+    save('readium_reflections', allR.filter(r => r.book_id !== id));
+
+    const books = load('readium_books', []).filter(b => b.id !== id);
+    save('readium_books', books);
+    set(state => ({
+      books,
+      currentBook: state.currentBook?.id === id ? null : state.currentBook,
+    }));
+  },
+
+  // ── Open a book ────────────────────────────────────────
+  fetchBook: (id) => {
+    set({ loading: true, currentBook: null, highlights: [], reflections: [], currentPage: 1, zoom: 1.0 });
+    const books = load('readium_books', []);
+    const book = books.find(b => b.id === id);
+    if (!book) {
+      set({ loading: false, error: 'Book not found' });
+      return;
+    }
+    const highlights = load('readium_highlights', []).filter(h => h.book_id === id);
+    const reflections = load('readium_reflections', []).filter(r => r.book_id === id);
+    set({
+      currentBook: book,
+      currentPage: book.current_page || 1,
+      zoom: book.zoom || 1.0,
+      highlights,
+      reflections,
+      loading: false,
     });
-    try {
-      const book = await api.getBook(id);
-      set({
-        currentBook: book,
-        currentPage: book.current_page || 1,
-        zoom: book.zoom || 1.0,
-        loading: false,
-      });
-      // Fetch data scoped to this specific book
-      const [highlights, reflections] = await Promise.all([
-        api.getHighlights(book.id),
-        api.getReflections(book.id),
-      ]);
-      set({ highlights, reflections });
-    } catch (error) {
-      set({ error: 'Failed to fetch book', loading: false });
-    }
   },
 
-  uploadBook: async (file, title, author) => {
-    set({ loading: true, error: null });
-    try {
-      const book = await api.uploadBook(file, title, author);
-      set(state => ({
-        books: [book, ...state.books],
-        loading: false
-      }));
-      return book;
-    } catch (error) {
-      set({ error: 'Failed to upload book', loading: false });
-      throw error;
-    }
+  // Get object URL for PDF (from in-memory fileStore)
+  getFileUrl: (id) => {
+    const file = fileStore[id];
+    if (!file) return null;
+    return URL.createObjectURL(file);
   },
 
-  deleteBook: async (id) => {
-    try {
-      await api.deleteBook(id);
-      set(state => ({
-        books: state.books.filter(b => b.id !== id),
-        currentBook: state.currentBook?.id === id ? null : state.currentBook
-      }));
-    } catch (error) {
-      set({ error: 'Failed to delete book' });
-    }
+  // Store file object (called when navigating to reader)
+  storeFile: (id, file) => {
+    fileStore[id] = file;
   },
 
-  // Notes
-  fetchNotes: async (bookId) => {
-    try {
-      const notes = await api.getNotes(bookId);
-      set({ notes });
-    } catch (error) {
-      console.error('Failed to fetch notes:', error);
-    }
+  // ── Highlights ────────────────────────────────────────
+  createHighlight: (bookId, pageNumber, content, position, color) => {
+    const highlight = {
+      id: uid(),
+      book_id: bookId,
+      page_number: pageNumber,
+      content,
+      position,
+      color: color || 'yellow',
+      createdAt: Date.now(),
+    };
+    const all = load('readium_highlights', []);
+    all.push(highlight);
+    save('readium_highlights', all);
+    set(state => ({ highlights: [...state.highlights, highlight] }));
+    return highlight;
   },
 
-  createNote: async (bookId, content, title, pageNumber, highlightId) => {
-    try {
-      const note = await api.createNote(bookId, content, title, pageNumber, highlightId);
-      set(state => ({ notes: [note, ...state.notes] }));
-      return note;
-    } catch (error) {
-      set({ error: 'Failed to create note' });
-      throw error;
-    }
+  deleteHighlight: (id) => {
+    const all = load('readium_highlights', []).filter(h => h.id !== id);
+    save('readium_highlights', all);
+    const allR = load('readium_reflections', []).filter(r => r.highlight_id !== id);
+    save('readium_reflections', allR);
+    set(state => ({
+      highlights: state.highlights.filter(h => h.id !== id),
+      reflections: state.reflections.filter(r => r.highlight_id !== id),
+    }));
   },
 
-  deleteNote: async (id) => {
-    try {
-      await api.deleteNote(id);
-      set(state => ({
-        notes: state.notes.filter(n => n.id !== id)
-      }));
-    } catch (error) {
-      set({ error: 'Failed to delete note' });
-    }
+  // ── Reflections ───────────────────────────────────────
+  createReflection: ({ highlightId, bookId, agentStyle, userNote, reflection, recommendations }) => {
+    const obj = {
+      id: uid(),
+      highlight_id: highlightId,
+      book_id: bookId,
+      agent_style: agentStyle,
+      user_note: userNote,
+      reflection,
+      recommendations: recommendations || [],
+      conversation: [],
+      createdAt: Date.now(),
+    };
+    const all = load('readium_reflections', []);
+    all.push(obj);
+    save('readium_reflections', all);
+    set(state => ({ reflections: [...state.reflections, obj] }));
+    return obj;
   },
 
-  // Highlights
-  fetchHighlights: async (bookId) => {
-    try {
-      const highlights = await api.getHighlights(bookId);
-      set({ highlights });
-    } catch (error) {
-      console.error('Failed to fetch highlights:', error);
-    }
+  updateConversation: (reflectionId, conversation) => {
+    const all = load('readium_reflections', []).map(r =>
+      r.id === reflectionId ? { ...r, conversation } : r
+    );
+    save('readium_reflections', all);
+    set(state => ({
+      reflections: state.reflections.map(r =>
+        r.id === reflectionId ? { ...r, conversation } : r
+      ),
+    }));
   },
 
-  createHighlight: async (bookId, pageNumber, content, position, color) => {
-    try {
-      const highlight = await api.createHighlight(bookId, pageNumber, content, position, color);
-      set(state => ({ highlights: [...state.highlights, highlight] }));
-      return highlight;
-    } catch (error) {
-      set({ error: 'Failed to create highlight' });
-      throw error;
-    }
-  },
-
-  deleteHighlight: async (id) => {
-    try {
-      await api.deleteHighlight(id);
-      set(state => ({
-        highlights: state.highlights.filter(h => h.id !== id),
-        reflections: state.reflections.filter(r => r.highlight_id !== id),
-      }));
-    } catch (error) {
-      set({ error: 'Failed to delete highlight' });
-    }
-  },
-
-  // Reflections
-  createReflection: async ({ highlightId, bookId, agentStyle, userNote, reflection, recommendations }) => {
-    try {
-      const created = await api.createReflection({
-        highlightId, bookId, agentStyle, userNote, reflection, recommendations, conversation: []
-      });
-      set(state => ({ reflections: [...state.reflections, created] }));
-      return created;
-    } catch (error) {
-      set({ error: 'Failed to save reflection' });
-      throw error;
-    }
-  },
-
-  updateConversation: async (reflectionId, conversation) => {
-    try {
-      const updated = await api.updateConversation(reflectionId, conversation);
-      set(state => ({
-        reflections: state.reflections.map(r => r.id === reflectionId ? updated : r)
-      }));
-      return updated;
-    } catch (error) {
-      console.error('Failed to update conversation:', error);
-    }
-  },
-
-  // Page & Zoom
+  // ── Page / Zoom ───────────────────────────────────────
   setCurrentPage: (page) => set({ currentPage: page }),
   setZoom: (zoom) => set({ zoom }),
 
-  // Update progress
-  updateProgress: async () => {
+  updateProgress: () => {
     const { currentBook, currentPage, zoom } = get();
-    if (currentBook) {
-      try {
-        await api.updateProgress(currentBook.id, currentPage, zoom);
-      } catch (error) {
-        console.error('Failed to update progress:', error);
-      }
-    }
-  }
+    if (!currentBook) return;
+    const books = load('readium_books', []).map(b =>
+      b.id === currentBook.id ? { ...b, current_page: currentPage, zoom } : b
+    );
+    save('readium_books', books);
+    set({ books });
+  },
+
+  setTotalPages: (total) => {
+    const { currentBook } = get();
+    if (!currentBook) return;
+    const books = load('readium_books', []).map(b =>
+      b.id === currentBook.id ? { ...b, total_pages: total } : b
+    );
+    save('readium_books', books);
+    set(state => ({
+      books,
+      currentBook: { ...state.currentBook, total_pages: total },
+    }));
+  },
 }));
 
 export default useBookStore;

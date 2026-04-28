@@ -192,44 +192,22 @@ function SparkleLayer() {
   return <canvas ref={canvasRef} style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1 }} />;
 }
 
-
-
 function NautilusSVG({ size, rotation }) {
   return (
-    <img
-      src={NautilusAsset}
-      width={size * 15}
-      height={size * 15}
-      style={{
-        transform: `rotate(${rotation}deg)`,
-        display: 'block',
-        pointerEvents: 'none',
-      }}
-      alt=""
-    />
+    <img src={NautilusAsset} width={size * 15} height={size * 15}
+      style={{ transform: `rotate(${rotation}deg)`, display: 'block', pointerEvents: 'none' }} alt="" />
   );
 }
 
 function ScallopSVG({ size, rotation }) {
   return (
-    <img
-      src={ScallopAsset}
-      width={size * 8}
-      height={size * 8}
-      style={{
-        transform: `rotate(${rotation}deg)`,
-        display: 'block',
-        pointerEvents: 'none',
-      }}
-      alt=""
-    />
+    <img src={ScallopAsset} width={size * 8} height={size * 8}
+      style={{ transform: `rotate(${rotation}deg)`, display: 'block', pointerEvents: 'none' }} alt="" />
   );
 }
 
 function ShellBubble({ containX, containY, radius, type, onClick }) {
   const SIZE = 72;
-  const BUBBLE_R = SIZE;  // doubled visual size, hitbox stays same
-
   const posRef = useRef({
     x: containX + (Math.random() - 0.5) * radius * 0.4,
     y: containY + (Math.random() - 0.5) * radius * 0.4,
@@ -238,14 +216,10 @@ function ShellBubble({ containX, containY, radius, type, onClick }) {
     rotation: Math.random() * 360,
     angularVel: (Math.random() - 0.5) * 0.25,
   });
-  const [pos, setPos] = useState({
-    x: posRef.current.x,
-    y: posRef.current.y,
-    rotation: posRef.current.rotation,
-  });
+  const [pos, setPos] = useState({ x: posRef.current.x, y: posRef.current.y, rotation: posRef.current.rotation });
   const [hovered, setHovered] = useState(false);
   const animRef = useRef(null);
-  const HIT_R = 36; // click hitbox radius
+  const HIT_R = 36;
 
   useEffect(() => {
     const tick = () => {
@@ -278,39 +252,27 @@ function ShellBubble({ containX, containY, radius, type, onClick }) {
     return () => cancelAnimationFrame(animRef.current);
   }, [containX, containY, radius]);
 
-  const DISPLAY = SIZE * 2; // visual diameter
-
+  const DISPLAY = SIZE * 2;
   return (
-    <div
-      onClick={() => onClick(pos.x, pos.y)}
+    <div onClick={() => onClick(pos.x, pos.y)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        position: 'fixed',
-        left: pos.x - DISPLAY / 2,
-        top: pos.y - DISPLAY / 2,
-        width: DISPLAY,
-        height: DISPLAY,
-        cursor: 'pointer',
-        zIndex: 50,
+        position: 'fixed', left: pos.x - DISPLAY / 2, top: pos.y - DISPLAY / 2,
+        width: DISPLAY, height: DISPLAY, cursor: 'pointer', zIndex: 50,
         transform: `scale(${hovered ? 1.1 : 1}) translateY(${hovered ? '-4px' : '0'})`,
         transition: 'transform 0.28s cubic-bezier(0.34,1.56,0.64,1)',
-        filter: hovered
-          ? 'drop-shadow(0 8px 18px rgba(100,60,20,0.4))'
-          : 'drop-shadow(0 4px 10px rgba(100,60,20,0.22))',
+        filter: hovered ? 'drop-shadow(0 8px 18px rgba(100,60,20,0.4))' : 'drop-shadow(0 4px 10px rgba(100,60,20,0.22))',
         overflow: 'visible',
-      }}
-    >
-      {type === 'nautilus'
-        ? <NautilusSVG size={SIZE} rotation={pos.rotation} />
-        : <ScallopSVG size={SIZE} rotation={pos.rotation} />}
+      }}>
+      {type === 'nautilus' ? <NautilusSVG size={SIZE} rotation={pos.rotation} /> : <ScallopSVG size={SIZE} rotation={pos.rotation} />}
     </div>
   );
 }
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { books, loading, fetchBooks, uploadBook, deleteBook } = useBookStore();
+  const { books, fetchBooks, addBook, deleteBook, storeFile } = useBookStore();
   const [uploading, setUploading] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
@@ -324,12 +286,12 @@ export default function HomePage() {
     return () => window.removeEventListener('resize', h);
   }, [fetchBooks]);
 
-  const handleUpload = async (e) => {
+  const handleOpen = async (e) => {
     e.preventDefault();
     if (!uploadFile || !uploadTitle.trim()) return;
     setUploading(true);
     try {
-      const book = await uploadBook(uploadFile, uploadTitle, '');
+      const book = addBook(uploadFile, uploadTitle.trim());
       navigate(`/reader/${book.id}`);
     } catch (err) {
       console.error(err);
@@ -338,9 +300,24 @@ export default function HomePage() {
     }
   };
 
-  const handleDelete = async (e, id) => {
+  // When clicking an existing book, user must re-select the file
+  // because File objects can't be persisted across sessions
+  const handleBookClick = (book) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      storeFile(book.id, file);
+      navigate(`/reader/${book.id}`);
+    };
+    input.click();
+  };
+
+  const handleDelete = (e, id) => {
     e.stopPropagation();
-    if (confirm('Delete this book?')) await deleteBook(id);
+    if (confirm('Delete this book and all its notes?')) deleteBook(id);
   };
 
   const W = windowSize.w, H = windowSize.h;
@@ -376,27 +353,22 @@ export default function HomePage() {
             borderRadius: '22px',
             border: '0.5px solid rgba(255,255,255,0.78)',
             boxShadow: '0 8px 28px rgba(0,0,0,0.09),inset 0 1px 0 rgba(255,255,255,0.92)',
-            padding: '30px 48px',      // 比之前 26px 42px 更大
-            marginBottom: '32px',
+            padding: '30px 48px', marginBottom: '32px',
           }}>
-            <BookOpen size={36} color="#5a3e28" />   {/* 比之前 32 更大 */}
+            <BookOpen size={36} color="#5a3e28" />
             <div>
-              <h1 style={{ margin: 0, fontSize: '30px', fontWeight: 700, color: '#1a1410', lineHeight: 1.2 }}>
-                Readium
-              </h1>
-              <p style={{ margin: '5px 0 0', fontSize: '14px', color: '#7a6e62', lineHeight: 1.3 }}>
-                Mind in Charge, Tech on Call
-              </p>
+              <h1 style={{ margin: 0, fontSize: '30px', fontWeight: 700, color: '#1a1410', lineHeight: 1.2 }}>Readium</h1>
+              <p style={{ margin: '5px 0 0', fontSize: '14px', color: '#7a6e62', lineHeight: 1.3 }}>Mind in Charge, Tech on Call</p>
             </div>
           </div>
 
-          {/* Upload card */}
+          {/* Open PDF card */}
           <section style={{ marginBottom: '24px' }}>
             <div style={{ ...card, padding: '28px' }}>
               <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#1c1916', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Upload size={15} color="#5a3e28" /> Upload PDF
+                <Upload size={15} color="#5a3e28" /> Open PDF
               </h2>
-              <form onSubmit={handleUpload} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <form onSubmit={handleOpen} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <input type="text" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)}
                   placeholder="Book title" required
                   style={{ width: '100%', padding: '10px 14px', boxSizing: 'border-box', background: 'rgba(255,255,255,0.6)', border: '0.5px solid rgba(200,194,184,0.65)', borderRadius: '12px', fontSize: '14px', color: '#1c1916', outline: 'none', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.05)' }}
@@ -409,11 +381,11 @@ export default function HomePage() {
                         </div>
                       : <div style={{ color: '#8a8278' }}>
                           <p style={{ margin: 0, fontSize: '14px' }}>Click to select PDF file</p>
-                          <p style={{ margin: '4px 0 0', fontSize: '12px' }}>or drag and drop</p>
+                          <p style={{ margin: '4px 0 0', fontSize: '12px' }}>File stays on your device — nothing is uploaded</p>
                         </div>
                     }
                   </div>
-                  <input type="file" accept=".pdf" onChange={e => setUploadFile(e.target.files[0])} style={{ display: 'none' }} required />
+                  <input type="file" accept=".pdf" onChange={e => { setUploadFile(e.target.files[0]); if (!uploadTitle && e.target.files[0]) setUploadTitle(e.target.files[0].name.replace(/\.pdf$/i, '')); }} style={{ display: 'none' }} required />
                 </label>
                 <button type="submit" disabled={disabled}
                   style={{
@@ -426,30 +398,26 @@ export default function HomePage() {
                     transition: 'background 0.2s',
                   }}>
                   {uploading ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={15} />}
-                  {uploading ? 'Uploading...' : 'Upload & Read'}
+                  {uploading ? 'Opening...' : 'Open & Read'}
                 </button>
               </form>
             </div>
           </section>
 
-          {/* Books card */}
+          {/* Books list */}
           <section>
             <div style={{ ...card, padding: '28px' }}>
-              <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#1c1916', margin: '0 0 16px' }}>Your Books</h2>
-              {loading && (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '24px' }}>
-                  <Loader2 size={22} color="#8a8278" style={{ animation: 'spin 1s linear infinite' }} />
-                </div>
-              )}
-              {!loading && books.length === 0 && (
+              <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#1c1916', margin: '0 0 4px' }}>Your Books</h2>
+              <p style={{ fontSize: '12px', color: '#8a8278', margin: '0 0 16px' }}>Click a book to re-open it — you'll need to select the file again</p>
+              {books.length === 0 && (
                 <p style={{ textAlign: 'center', color: '#8a8278', fontSize: '14px', padding: '16px 0', margin: 0 }}>
-                  No books yet. Upload a PDF to get started.
+                  No books yet. Open a PDF to get started.
                 </p>
               )}
               {books.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {books.map(book => (
-                    <div key={book.id} onClick={() => navigate(`/reader/${book.id}`)}
+                    <div key={book.id} onClick={() => handleBookClick(book)}
                       style={{ background: 'rgba(255,255,255,0.42)', border: '0.5px solid rgba(255,255,255,0.72)', borderRadius: '14px', padding: '14px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 8px rgba(0,0,0,0.05),inset 0 1px 0 rgba(255,255,255,0.8)', transition: 'background 0.15s,box-shadow 0.15s,transform 0.15s' }}
                       onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.68)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.08),inset 0 1px 0 rgba(255,255,255,0.9)'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.42)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05),inset 0 1px 0 rgba(255,255,255,0.8)'; }}
@@ -461,7 +429,8 @@ export default function HomePage() {
                         <div>
                           <p style={{ margin: 0, fontSize: '14px', fontWeight: 500, color: '#1c1916' }}>{book.title}</p>
                           <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#8a8278' }}>
-                            {book.current_page ? `Page ${book.current_page} of ${book.total_pages || '?'}` : 'Not started'}
+                            {book.current_page > 1 ? `Last read: page ${book.current_page}` : 'Not started'}
+                            {book.fileName && ` · ${book.fileName}`}
                           </p>
                         </div>
                       </div>
