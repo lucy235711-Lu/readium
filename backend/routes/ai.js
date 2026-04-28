@@ -1,6 +1,6 @@
 import express from 'express';
 import AgentFactory from '../agents/agentFactory.js';
-import { run, getOne } from '../models/database.js';
+import { supabase, getUserFromRequest } from '../lib/supabaseAdmin.js';
 
 const router = express.Router();
 
@@ -15,7 +15,6 @@ router.post('/generate', async (req, res) => {
       userNote = '',
       userNotes,
       highlightContent,
-      // For concept extraction
       highlightId,
       bookId,
       bookTitle,
@@ -48,7 +47,6 @@ router.post('/generate', async (req, res) => {
       userNote: resolvedNote,
     });
 
-    // Parse structured JSON from AI response
     let reflection = result.content;
     let recommendations = getRecommendations(style);
 
@@ -63,18 +61,20 @@ router.post('/generate', async (req, res) => {
       console.warn('AI response was not valid JSON, using raw content');
     }
 
-    // Send response immediately, don't wait for concept extraction
     res.json({
       reflection,
       recommendations,
       metadata: { style, provider: result.provider, generatedAt: new Date().toISOString() },
     });
 
-    // Async: extract concepts and save to user_concepts table
-    // Runs after response is sent, won't affect user experience
+    // Async: extract concepts and save to Supabase
     if (highlightId && bookId) {
       setImmediate(async () => {
         try {
+          // Get user from token
+          const user = await getUserFromRequest(req);
+          if (!user) return;
+
           const concepts = await agent.extractConcepts({
             sourceText: resolvedSource,
             userNote: resolvedNote,
@@ -85,11 +85,16 @@ router.post('/generate', async (req, res) => {
 
           for (const { concept, context } of concepts) {
             if (!concept || !context) continue;
-            run(
-              `INSERT INTO user_concepts (book_id, book_title, highlight_id, agent_style, concept, context, source_text)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [bookId, title, highlightId, style, concept, context, resolvedSource]
-            );
+            await supabase.from('user_concepts').insert({
+              user_id: user.id,
+              book_id: bookId,
+              book_title: title,
+              highlight_id: highlightId,
+              agent_style: style,
+              concept,
+              context,
+              source_text: resolvedSource,
+            });
           }
 
           console.log(`Extracted ${concepts.length} concepts for highlight ${highlightId}`);

@@ -1,86 +1,90 @@
 import express from 'express';
-import { getAll, getOne } from '../models/database.js';
+import { supabase, getUserFromRequest } from '../lib/supabaseAdmin.js';
 
 const router = express.Router();
 
-// Get all concepts (for 知音对话 digest generation)
-router.get('/', (req, res) => {
+// Get all concepts
+router.get('/', async (req, res) => {
   try {
-    const { limit = 100, since } = req.query;
+    const user = await getUserFromRequest(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const concepts = since
-      ? getAll(
-          `SELECT * FROM user_concepts WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?`,
-          [since, parseInt(limit)]
-        )
-      : getAll(
-          `SELECT * FROM user_concepts ORDER BY created_at DESC LIMIT ?`,
-          [parseInt(limit)]
-        );
+    const { limit = 100 } = req.query;
+    let query = supabase
+      .from('user_concepts')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit));
 
-    res.json(concepts);
+    if (req.query.since) query = query.gte('created_at', req.query.since);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data || []);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get concepts grouped by book (for 颅内世界 map)
-router.get('/by-book', (req, res) => {
+// Get concepts grouped by book
+router.get('/by-book', async (req, res) => {
   try {
-    const books = getAll(`
-      SELECT
-        uc.book_id,
-        uc.book_title,
-        COUNT(*) as concept_count,
-        GROUP_CONCAT(uc.concept, '|||') as concepts_raw,
-        GROUP_CONCAT(COALESCE(uc.source_text, h.content, ''), '|||') as sources_raw,
-        GROUP_CONCAT(COALESCE(uc.page_number, h.page_number, ''), '|||') as pages_raw
-      FROM user_concepts uc
-      LEFT JOIN highlights h ON uc.highlight_id = h.id
-      GROUP BY uc.book_id
-      ORDER BY concept_count DESC
-    `);
+    const user = await getUserFromRequest(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
- const result = books.map(b => {
-  const conceptArr = b.concepts_raw ? b.concepts_raw.split('|||') : [];
-  const sourceArr  = b.sources_raw  ? b.sources_raw.split('|||')  : [];
-  const pageArr    = b.pages_raw    ? b.pages_raw.split('|||')    : [];
-  return {
-    bookId: b.book_id,
-    bookTitle: b.book_title,
-    conceptCount: b.concept_count,
-    concepts: conceptArr.map((con, i) => ({
-      concept: con,
-      sourceText: sourceArr[i] || '',
-      page: pageArr[i] || '',
-    })),
-  };
-});
+    const { data, error } = await supabase
+      .from('user_concepts')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
 
-    res.json(result);
+    if (error) throw error;
+
+    const byBook = {};
+    for (const c of (data || [])) {
+      if (!byBook[c.book_id]) {
+        byBook[c.book_id] = {
+          bookId: c.book_id,
+          bookTitle: c.book_title,
+          conceptCount: 0,
+          concepts: [],
+        };
+      }
+      byBook[c.book_id].concepts.push({
+        concept: c.concept,
+        sourceText: c.source_text || '',
+        page: '',
+      });
+      byBook[c.book_id].conceptCount++;
+    }
+
+    res.json(Object.values(byBook));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get recent concepts for digest (last N days)
-router.get('/recent', (req, res) => {
+// Get recent concepts for digest
+router.get('/recent', async (req, res) => {
   try {
+    const user = await getUserFromRequest(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     const { days = 30 } = req.query;
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-    const concepts = getAll(
-      `SELECT uc.*, h.content as highlight_content
-       FROM user_concepts uc
-       LEFT JOIN highlights h ON uc.highlight_id = h.id
-       WHERE uc.created_at >= ?
-       ORDER BY uc.created_at DESC`,
-      [since]
-    );
+    const { data, error } = await supabase
+      .from('user_concepts')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false });
 
-    // Group by book for easier consumption by AI digest
+    if (error) throw error;
+
     const byBook = {};
-    for (const c of concepts) {
+    for (const c of (data || [])) {
       if (!byBook[c.book_id]) {
         byBook[c.book_id] = {
           bookId: c.book_id,
@@ -92,7 +96,6 @@ router.get('/recent', (req, res) => {
         concept: c.concept,
         context: c.context,
         agentStyle: c.agent_style,
-        highlightContent: c.highlight_content,
         createdAt: c.created_at,
       });
     }
@@ -100,8 +103,34 @@ router.get('/recent', (req, res) => {
     res.json({
       since,
       books: Object.values(byBook),
-      totalConcepts: concepts.length,
+      totalConcepts: (data || []).length,
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save a concept (called from ai.js)
+router.post('/', async (req, res) => {
+  try {
+    const user = await getUserFromRequest(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { bookId, bookTitle, highlightId, agentStyle, concept, context, sourceText } = req.body;
+
+    const { error } = await supabase.from('user_concepts').insert({
+      user_id: user.id,
+      book_id: bookId,
+      book_title: bookTitle,
+      highlight_id: highlightId,
+      agent_style: agentStyle,
+      concept,
+      context,
+      source_text: sourceText,
+    });
+
+    if (error) throw error;
+    res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
