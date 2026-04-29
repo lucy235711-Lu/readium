@@ -33,7 +33,7 @@ const useBookStore = create((set, get) => ({
     fileStore[id] = file;
 
     // Upload PDF to Supabase Storage
-    const filePath = `${user.id}/${id}/${file.name}`;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_"); const filePath = `${user.id}/${id}/${safeName}`;
     const { error: uploadError } = await supabase.storage
       .from('pdfs')
       .upload(filePath, file);
