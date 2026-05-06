@@ -556,8 +556,8 @@ function BubbleQuestion({ question, visible, delay, answer, onAnswer, children }
 
       {answer===null && (
         <div style={{ display:'flex', gap:10, paddingLeft:8 }}>
-          {['是','跳过'].map(opt=>(
-            <BubbleBtn key={opt} label={opt} gold={opt==='是'} onClick={()=>onAnswer(opt==='是')} />
+          {['Yes','Skip'].map(opt=>(
+            <BubbleBtn key={opt} label={opt} gold={opt==='Yes'} onClick={()=>onAnswer(opt==='Yes')} />
           ))}
         </div>
       )}
@@ -568,7 +568,7 @@ function BubbleQuestion({ question, visible, delay, answer, onAnswer, children }
       )}
       {answer===false && (
         <div style={{ paddingLeft:10, color:'rgba(120,160,220,0.36)', fontFamily:'"Georgia",serif', fontStyle:'italic', fontSize:12, animation:'zhiyinFadeUp 0.4s ease' }}>
-          好的，记下了。
+          Noted.
         </div>
       )}
     </div>
@@ -770,7 +770,7 @@ function LoadingIndicator() {
         <div style={{ position:'absolute',inset:20,borderRadius:'50%',background:'rgba(80,160,255,0.10)',animation:'zhiyinPulse 2.5s ease infinite' }} />
       </div>
       <div style={{ color:'rgba(130,190,240,0.42)',fontFamily:'"Georgia",serif',fontStyle:'italic',fontSize:13,letterSpacing:'0.12em',animation:'zhiyinPulse 3s ease infinite' }}>
-        正在梳理你的阅读轨迹…
+        Tracing your reading journey…
       </div>
     </div>
   );
@@ -801,7 +801,7 @@ export default function ZhiyinPage() {
     }
     getRecentConcepts(30).then(async data=>{
       if(!data||data.totalConcepts===0){
-        const fb='你最近的阅读记录还很空白，像退潮后的沙滩。开始阅读并标记重点，知音会帮你记录思维漂流的轨迹。';
+        const fb='Your reading log is still quiet — like a beach after the tide. Start reading and marking passages, and Drifty Diary will trace your thoughts.';
         setJournalText(fb);saveJournalCache({journal:fb,crossInsight:null});
         setPhase(PHASE.JOURNAL);setTimeout(()=>setPaperVisible(true),200);return;
       }
@@ -812,12 +812,12 @@ export default function ZhiyinPage() {
         setJournalText(r.journal||'');setCrossInsight(r.crossInsight||null);
         saveJournalCache({journal:r.journal||'',crossInsight:r.crossInsight||null});
       }catch{
-        const fb=`过去一个月，你在${data.books?.length||0}本书中留下了${data.totalConcepts}个思维印记。那些被你圈出的文字，正像沉入海底的贝壳，静静等待被重新发现。`;
+        const fb=`Over the past month, you left ${data.books?.length||0} books worth of thought traces — ${data.totalConcepts} impressions in total. The passages you marked are like shells on the seafloor, waiting to be rediscovered.`;
         setJournalText(fb);saveJournalCache({journal:fb,crossInsight:null});
       }
       setPhase(PHASE.JOURNAL);setTimeout(()=>setPaperVisible(true),220);
     }).catch(()=>{
-      setJournalText('海浪暂时带走了你的阅读记录，请稍后再试。');
+      setJournalText('The waves took your reading records for now. Please try again later.');
       setPhase(PHASE.JOURNAL);setTimeout(()=>setPaperVisible(true),220);
     });
   },[]);
@@ -837,15 +837,15 @@ export default function ZhiyinPage() {
         if(extraMusic)parts.push(extraMusic);
         if(extraFilms)parts.push(extraFilms);
        const endings = [
-        '你的阅读痕迹已悄悄沉入记忆的深海，静候下一次回响。',
-        '那些被翻过的页，正在水底悄悄发光。',
-        '漂流总会停靠，思绪自有归处。',
-        '每一次阅读，都是向自己内部的一次潜水。',
-        '书页、旋律与影像，悄然沉入心海，化作漂流的涟漪，静待下一次潮起。',
-        '你的文字、乐声与画面，在记忆深处缓缓沉没，如海底沉船，静静等待回响。',
-        '阅读的痕迹、耳畔的旋律、眼前的影像，缓缓沉入深海，化作潜流的低语。',
-        '书本、音乐与影像，如同漂流物落入海底，轻轻沉默，却在等待下一次涌动。',
-        '文字、旋律与影像，悄悄汇入记忆的深海，如微光漂浮，静候下一次触碰。'
+        'Your reading traces have drifted into the deep, waiting for the next echo.',
+        'The pages you turned are quietly glowing at the bottom of the sea.',
+        'Every drift finds a shore. Every thought finds its place.',
+        '每一次阅读，都Yes向自己内部的一次潜水。',
+        'Pages, melodies, and images drift silently into the heart, becoming ripples, waiting for the next tide.',
+        'Your words, sounds, and images slowly sink into memory — like a shipwreck on the ocean floor, waiting quietly for an echo.',
+        'The traces of reading, the melodies in your ears, the images before your eyes — all drifting slowly into the deep, becoming whispers in the current.',
+        'Books, music, and images — like driftwood settling on the seafloor, quietly still, yet waiting for the next surge.',
+        'Words, melodies, and images quietly merge into the deep sea of memory — floating like faint light, waiting for the next touch.'
 ];
 
 const randomEnding = endings[Math.floor(Math.random() * endings.length)];
@@ -916,7 +916,7 @@ setSynthText(endings[Math.floor(Math.random() * endings.length)]);
       }}
         onMouseEnter={e=>{e.currentTarget.style.background='rgba(0,20,60,0.72)';e.currentTarget.style.color='rgba(200,230,255,0.9)';}}
         onMouseLeave={e=>{e.currentTarget.style.background='rgba(0,10,30,0.52)';e.currentTarget.style.color='rgba(150,210,255,0.62)';}}
-      >← 返回</button>
+      >← Back</button>
 
       {/* Title */}
       <div style={{ position:'fixed',top:27,left:'50%',transform:'translateX(-50%)',zIndex:300,pointerEvents:'none',whiteSpace:'nowrap' }}>
@@ -940,22 +940,22 @@ setSynthText(endings[Math.floor(Math.random() * endings.length)]);
           }}
             onMouseEnter={e=>{e.currentTarget.style.background='rgba(10,50,160,0.22)';e.currentTarget.style.borderColor='rgba(150,220,255,0.52)';}}
             onMouseLeave={e=>{e.currentTarget.style.background='rgba(0,15,40,0.55)';e.currentTarget.style.borderColor='rgba(130,200,255,0.28)';}}
-          >告诉我最近还在经历什么 →</button>
+          >Tell me what else you've been experiencing →</button>
         </div>
       )}
 
       {(phase===PHASE.QUESTIONNAIRE||phase===PHASE.SYNTHESIS)&&(
         <div style={{ position:'relative',zIndex:10,minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'100px 24px 80px' }}>
           <div style={{ width:'100%',maxWidth:390,display:'flex',flexDirection:'column',gap:24 }}>
-            <div style={{ textAlign:'center',color:'rgba(130,190,255,0.22)',fontFamily:'"Georgia",serif',fontStyle:'italic',fontSize:11,letterSpacing:'0.14em',marginBottom:2,animation:'zhiyinFadeUp 0.8s ease' }}>漂流物收集</div>
-            <BubbleQuestion question="近期有没有阅读未上传到书库的书？" visible={q1Vis} delay={0} answer={qBooks} onAnswer={setQBooks}>
-              <WaveInput placeholder="书名、作者，或随便聊聊…" value={extraBooks} onChange={setExtraBooks} />
+            <div style={{ textAlign:'center',color:'rgba(130,190,255,0.22)',fontFamily:'"Georgia",serif',fontStyle:'italic',fontSize:11,letterSpacing:'0.14em',marginBottom:2,animation:'zhiyinFadeUp 0.8s ease' }}>Drifting Objects</div>
+            <BubbleQuestion question="Any books you read recently but didn't upload?" visible={q1Vis} delay={0} answer={qBooks} onAnswer={setQBooks}>
+              <WaveInput placeholder="Title, author, or just a note…" value={extraBooks} onChange={setExtraBooks} />
             </BubbleQuestion>
-            <BubbleQuestion question="最近有什么音乐在脑海中反复浮现？" visible={q2Vis} delay={110} answer={qMusic} onAnswer={setQMusic}>
-              <WaveInput placeholder="音乐人、专辑名、或某首歌…" value={extraMusic} onChange={setExtraMusic} />
+            <BubbleQuestion question="Any music that's been on repeat in your mind?" visible={q2Vis} delay={110} answer={qMusic} onAnswer={setQMusic}>
+              <WaveInput placeholder="Artist, album, or a song name…" value={extraMusic} onChange={setExtraMusic} />
             </BubbleQuestion>
-            <BubbleQuestion question="近期看了让你有些感触的电影或剧集吗？" visible={q3Vis} delay={130} answer={qFilm} onAnswer={setQFilm}>
-              <WaveInput placeholder="片名、导演，或一句感受…" value={extraFilms} onChange={setExtraFilms} />
+            <BubbleQuestion question="Any films or shows that stayed with you lately?" visible={q3Vis} delay={130} answer={qFilm} onAnswer={setQFilm}>
+              <WaveInput placeholder="Title, director, or a quick impression…" value={extraFilms} onChange={setExtraFilms} />
             </BubbleQuestion>
           </div>
         </div>

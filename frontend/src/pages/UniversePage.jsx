@@ -40,30 +40,30 @@ const INSIGHT_TEMPLATES = [
   (x,y)=>`You noticed the same drifting cloud in ${x} and ${y}.`,
   (x,y)=>`The horizon stretches alike in ${x} and ${y}.`,
   (x,y)=>`${x} and ${y} catch the same trembling of morning light.`,
-  (x,y)=>`《${x}》和《${y}》让你的思绪同时微微颤动。`,
-  (x,y)=>`你在《${x}》和《${y}》中都感受到了同样的静默。`,
-  (x,y)=>`两本书都让你在某个瞬间屏息凝视。`,
-  (x,y)=>`你在《${x}》和《${y}》中都抓住了同一丝模糊的念头。`,
-  (x,y)=>`《${x}》和《${y}》让你的注意力停在同一个裂缝里。`,
-  (x,y)=>`你在两本书中都尝到了同样的心灵回声。`,
-  (x,y)=>`思绪在《${x}》和《${y}》中同步漂浮。`,
-  (x,y)=>`你在《${x}》和《${y}》中都触及了同一片不可言说的空白。`,
-  (x,y)=>`你在《${x}》和《${y}》中都听见了自己的思绪低声起舞。`,
-  (x,y)=>`《${x}》和《${y}》让你的灵魂在同一瞬间屏住呼吸。`,
-  (x,y)=>`在《${x}》和《${y}》中，你捕捉到了同一个未完成的念头。`,
+  (x,y)=>`《${x}》and《${y}》made your thoughts tremble in the same way。`,
+  (x,y)=>`You found the same stillness in《${x}》and《${y}》and。`,
+  (x,y)=>`两本书都让You found the same stillness in某个瞬间屏息凝视。`,
+  (x,y)=>`You found the same stillness in《${x}》and《${y}》you both caught the same vague thread of thought。`,
+  (x,y)=>`《${x}》and《${y}》both held your attention at the same crack in the surface。`,
+  (x,y)=>`You found the same stillness in两本书中都尝到了同样的心灵回声。`,
+  (x,y)=>`Your thoughts drifted in the same current through《${x}》and《${y}》。`,
+  (x,y)=>`You found the same stillness in《${x}》and《${y}》you both touched the same unspeakable silence。`,
+  (x,y)=>`You found the same stillness in《${x}》and《${y}》中都听见了自己的思绪低声起舞。`,
+  (x,y)=>`《${x}》and《${y}》让你的灵魂在同一瞬间屏住呼吸。`,
+  (x,y)=>`在《${x}》and《${y}》中，你捕捉到了同一个未完成的念头。`,
   (x,y)=>`你的注意力在两本书之间跳动，如同光在裂缝里闪现。`,
-  (x,y)=>`《${x}》和《${y}》让你看见了心底的某个影子。`,
-  (x,y)=>`你在两本书里都感到同一瞬的微光滑过意识。`,
-  (x,y)=>`阅读像水波，你在《${x}》和《${y}》中都触到了同一圈涟漪。`,
-  (x,y)=>`你在《${x}》和《${y}》中都捕捉到了意识的悄悄呼吸。`,
+  (x,y)=>`《${x}》and《${y}》让你看见了心底的某个影子。`,
+  (x,y)=>`You found the same stillness in两本书里都感到同一瞬的微光滑过意识。`,
+  (x,y)=>`阅读像水波，You found the same stillness in《${x}》and《${y}》中都触到了同一圈涟漪。`,
+  (x,y)=>`You found the same stillness in《${x}》and《${y}》中都捕捉到了意识的悄悄呼吸。`,
   (x,y)=>`书页翻动，心里的某个角落同时亮了一下。`,
-  (x,y)=>`你在两本书里都碰到了同一个未命名的惊讶。`,
-  (x,y)=>`《${x}》和《${y}》让你的思绪在无声处共振。`,
-  (x,y)=>`思绪穿过《${x}》和《${y}》，留下轻微的涟漪。`,
+  (x,y)=>`You found the same stillness in两本书里都碰到了同一个未命名的惊讶。`,
+  (x,y)=>`《${x}》and《${y}》让你的Your thoughts drifted in the same current through无声处共振。`,
+  (x,y)=>`思绪穿过《${x}》and《${y}》，留下轻微的涟漪。`,
   (x,y)=>`文字从《${x}》飘向《${y}》，你的意识随之微微颤抖。`,
-  (x,y)=>`你在《${x}》和《${y}》中都感受到同一瞬间的心底震动。`,
+  (x,y)=>`You found the same stillness in《${x}》and《${y}》中都感受到同一瞬间的心底震动。`,
   (x,y)=>`两本书同时敲响你脑海里未被命名的门。`,
-  (x,y)=>`你在《${x}》和《${y}》中都感受到同一片瞬息的清醒。`,
+  (x,y)=>`You found the same stillness in《${x}》and《${y}》中都感受到同一片瞬息的清醒。`,
 ];
 function pickInsight(titleA, titleB) {
   const t = INSIGHT_TEMPLATES[Math.floor(Math.random() * INSIGHT_TEMPLATES.length)];
@@ -250,7 +250,7 @@ export default function UniversePage() {
     try { return JSON.parse(localStorage.getItem('zhiyin_butterflies_v1') || '[]'); } catch { return []; }
   })();
 
-  // 每只蝴蝶独立的屏幕坐标和hover状态
+  // 每只蝴蝶独立的屏幕坐标andhover状态
   const [butterflyScreens, setButterflyScreens] = useState([]);
   const [hoveredButterflyIdx, setHoveredButterflyIdx] = useState(-1);
   const butterflyRefs = useRef([]);
@@ -950,7 +950,7 @@ export default function UniversePage() {
         zIndex: 200, pointerEvents: 'none', textAlign: 'center',
       }}>
         <div style={{ fontFamily: '"Georgia", serif', fontSize: 15, letterSpacing: '0.18em', color: 'rgba(200,180,140,0.6)', textTransform: 'uppercase' }}>
-          颅内世界
+          Inner Universe
         </div>
         {!loading && books.length > 0 && (
           <div style={{ fontSize: 11, color: 'rgba(150,140,120,0.45)', marginTop: 4, letterSpacing: '0.08em' }}>
@@ -970,14 +970,14 @@ export default function UniversePage() {
       {loading && (
         <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', zIndex:300, flexDirection:'column', gap:16 }}>
           <div style={{ width:32, height:32, border:'1.5px solid rgba(200,180,140,0.2)', borderTopColor:'rgba(200,180,140,0.7)', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
-          <div style={{ color:'rgba(200,180,140,0.5)', fontFamily:'"Georgia", serif', fontSize:13 }}>构建宇宙中…</div>
+          <div style={{ color:'rgba(200,180,140,0.5)', fontFamily:'"Georgia", serif', fontSize:13 }}>Building your universe…</div>
         </div>
       )}
 
       {!loading && books.length === 0 && (
         <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, flexDirection:'column', gap:12, pointerEvents:'none' }}>
-          <div style={{ color:'rgba(200,180,140,0.35)', fontFamily:'"Georgia", serif', fontSize:15 }}>宇宙尚为空</div>
-          <div style={{ color:'rgba(150,140,120,0.3)', fontFamily:'"Georgia", serif', fontSize:12 }}>开始阅读并标记高亮，你的颅内世界将在此生长</div>
+          <div style={{ color:'rgba(200,180,140,0.35)', fontFamily:'"Georgia", serif', fontSize:15 }}>Your universe is empty</div>
+          <div style={{ color:'rgba(150,140,120,0.3)', fontFamily:'"Georgia", serif', fontSize:12 }}>开始阅读并标记高亮，你的Inner Universe将在此生长</div>
         </div>
       )}
 
